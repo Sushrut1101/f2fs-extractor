@@ -18,6 +18,7 @@ Usage:
 
 Commands:
 	help        Display this message
+	info        Show filesystem information
 
 Run 'f2fs-extractor <command> -h' for help on a specific command.
 `
@@ -45,6 +46,7 @@ func main() {
 	imagePath := os.Args[2]
 
 	switch command {
+	case "info":
 	default:
 		fmt.Printf("Unknown command: %s\n\n", command)
 		fmt.Print(globalUsage)
@@ -66,4 +68,9 @@ func main() {
 		os.Exit(1)
 	}
 	defer reader.Close()
+
+	switch command {
+	case "info":
+		reader.cmdInfo()
+	}
 }
