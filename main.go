@@ -7,6 +7,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 )
@@ -19,6 +20,7 @@ Usage:
 Commands:
 	help        Display this message
 	info        Show filesystem information
+	list        List directory contents
 
 Run 'f2fs-extractor <command> -h' for help on a specific command.
 `
@@ -44,9 +46,20 @@ func main() {
 	}
 
 	imagePath := os.Args[2]
+	cmdArgs := os.Args[3:]
+
+	if imagePath == "-h" || imagePath == "--help" {
+		cmdArgs = []string{"-h"}
+		imagePath = ""
+	}
+
+	listCmd := flag.NewFlagSet("list", flag.ExitOnError)
 
 	switch command {
 	case "info":
+	case "list":
+		listCmd.Parse(cmdArgs)
+		cmdArgs = listCmd.Args()
 	default:
 		fmt.Printf("Unknown command: %s\n\n", command)
 		fmt.Print(globalUsage)
@@ -69,8 +82,21 @@ func main() {
 	}
 	defer reader.Close()
 
+	var cmdErr error
+
 	switch command {
 	case "info":
 		reader.cmdInfo()
+	case "list":
+		path := "/"
+		if len(cmdArgs) > 0 {
+			path = cmdArgs[0]
+		}
+		cmdErr = reader.cmdList(path)
+	}
+
+	if cmdErr != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", cmdErr)
+		os.Exit(1)
 	}
 }
