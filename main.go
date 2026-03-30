@@ -21,6 +21,7 @@ Commands:
 	help        Display this message
 	info        Show filesystem information
 	list        List directory contents
+	extract     Extract a file or directory (defaults to root '/')
 
 Run 'f2fs-extractor <command> -h' for help on a specific command.
 `
@@ -55,11 +56,17 @@ func main() {
 
 	listCmd := flag.NewFlagSet("list", flag.ExitOnError)
 
+	extractCmd := flag.NewFlagSet("extract", flag.ExitOnError)
+	extFile := extractCmd.String("file", "/", "Path inside the F2FS image to extract (defaults to root)")
+
 	switch command {
 	case "info":
 	case "list":
 		listCmd.Parse(cmdArgs)
 		cmdArgs = listCmd.Args()
+	case "extract":
+		extractCmd.Parse(cmdArgs)
+		cmdArgs = extractCmd.Args()
 	default:
 		fmt.Printf("Unknown command: %s\n\n", command)
 		fmt.Print(globalUsage)
@@ -93,6 +100,12 @@ func main() {
 			path = cmdArgs[0]
 		}
 		cmdErr = reader.cmdList(path)
+	case "extract":
+		dest := "."
+		if len(cmdArgs) > 0 {
+			dest = cmdArgs[0]
+		}
+		cmdErr = reader.cmdExtract(*extFile, dest)
 	}
 
 	if cmdErr != nil {
