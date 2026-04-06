@@ -35,7 +35,7 @@ func main() {
 	command := os.Args[1]
 
 	// Catch global help requests
-	if command == "-h" || command == "--help" {
+	if command == "-h" || command == "--help" || command == "help" {
 		fmt.Print(globalUsage)
 		os.Exit(0)
 	}
