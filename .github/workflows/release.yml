@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          check-latest: true
+
+      - name: Compile Binaries
+        run: make all
+
+      - name: Package Assets
+        run: |
+          mkdir -p release_assets
+          TAG=${{ github.ref_name }}
+          
+          # Copy and rename Linux Binaries
+          cp out/linux/x86_64/f2fs-extractor release_assets/f2fs-extractor-$TAG-linux-x86_64
+          cp out/linux/x86/f2fs-extractor release_assets/f2fs-extractor-$TAG-linux-x86
+          cp out/linux/armeabi-v7a/f2fs-extractor release_assets/f2fs-extractor-$TAG-linux-armeabi-v7a
+          cp out/linux/arm64-v8a/f2fs-extractor release_assets/f2fs-extractor-$TAG-linux-arm64-v8a
+          
+          # Copy and rename macOS (Darwin) Binaries
+          cp out/darwin/x86_64/f2fs-extractor release_assets/f2fs-extractor-$TAG-darwin-x86_64
+          cp out/darwin/arm64-v8a/f2fs-extractor release_assets/f2fs-extractor-$TAG-darwin-arm64-v8a
+          
+          # Copy and rename Windows Binaries
+          cp out/windows/x86_64/f2fs-extractor.exe release_assets/f2fs-extractor-$TAG-windows-x86_64.exe
+          cp out/windows/x86/f2fs-extractor.exe release_assets/f2fs-extractor-$TAG-windows-x86.exe
+          cp out/windows/arm64-v8a/f2fs-extractor.exe release_assets/f2fs-extractor-$TAG-windows-arm64-v8a.exe
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release_assets/f2fs-extractor-*
+          generate_release_notes: true
