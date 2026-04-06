@@ -22,16 +22,72 @@ func (r *F2FSReader) cmdExtract(srcPath, dest string) error {
 	if isDir(in.IMode) {
 		return r.extractDir(nid, srcPath, dest)
 	}
+	if isSymlink(in.IMode) {
+		return r.extractSymlink(nid, srcPath, dest)
+	}
 	return r.extractFile(nid, srcPath, dest)
+}
+
+// Clean F2FS binary padding to prevent Linux syscall crashes
+func parseSymlinkTarget(data []byte) string {
+	// Aggressively trim null bytes and whitespace from BOTH ends of the string
+	target := strings.Trim(string(data), "\x00\n\r\t ")
+
+	// If there is still a rogue null byte in the middle of the string, it will
+	// crash the Linux kernel syscall with 'invalid argument' (EINVAL). Cut it off.
+	if idx := strings.IndexByte(target, 0); idx >= 0 {
+		target = target[:idx]
+	}
+
+	return target
+}
+
+func (r *F2FSReader) extractSymlink(nid uint32, srcPath, dest string) error {
+	outPath := dest
+	if info, err := os.Stat(outPath); err == nil && info.IsDir() {
+		outPath = filepath.Join(outPath, filepath.Base(srcPath))
+	} else if outPath == "" || outPath == "." {
+		outPath = filepath.Base(srcPath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+		return err
+	}
+
+	in, err := r.getInode(nid)
+	if err != nil {
+		return err
+	}
+
+	targetData, err := r.readFile(nid, int64(in.ISize))
+	if err != nil {
+		return err
+	}
+
+	targetStr := parseSymlinkTarget(targetData)
+	if targetStr == "" {
+		return fmt.Errorf("symlink target is empty after parsing")
+	}
+
+	_ = os.RemoveAll(outPath)
+	if err := os.Symlink(targetStr, outPath); err != nil {
+		return fmt.Errorf("failed to create symlink %s -> %s: %w", outPath, targetStr, err)
+	}
+
+	fmt.Printf("Extracted symlink: %s -> %s\n", outPath, targetStr)
+	return nil
 }
 
 func (r *F2FSReader) extractFile(nid uint32, srcPath, dest string) error {
 	outPath := dest
-	// If the destination is an existing directory, put the file inside it
 	if info, err := os.Stat(outPath); err == nil && info.IsDir() {
 		outPath = filepath.Join(outPath, filepath.Base(srcPath))
-	} else if outPath == "" {
+	} else if outPath == "" || outPath == "." {
 		outPath = filepath.Base(srcPath)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
+		return err
 	}
 
 	data, err := r.readFile(nid, -1)
@@ -46,7 +102,7 @@ func (r *F2FSReader) extractFile(nid uint32, srcPath, dest string) error {
 }
 
 func (r *F2FSReader) extractDir(nid uint32, srcPath, dest string) error {
-	if dest == "" {
+	if dest == "" || dest == "." {
 		dest = "extracted_root"
 	}
 	if err := os.MkdirAll(dest, 0755); err != nil {
@@ -70,13 +126,28 @@ func (r *F2FSReader) extractDir(nid uint32, srcPath, dest string) error {
 				fmt.Fprintf(os.Stderr, "Warning: extractdir %s: %v\n", childSrc, err)
 			}
 		case FTSymlink:
-			target, _ := r.readFile(e.Ino, 4096)
-			targetStr := strings.TrimRight(string(target), "\x00")
-			_ = os.Remove(childDst)
+			childIn, err := r.getInode(e.Ino)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: read symlink inode %s: %v\n", childSrc, err)
+				continue
+			}
+
+			targetData, _ := r.readFile(e.Ino, int64(childIn.ISize))
+			targetStr := parseSymlinkTarget(targetData)
+
+			if targetStr == "" {
+				fmt.Fprintf(os.Stderr, "Warning: empty target for symlink %s\n", childDst)
+				continue
+			}
+
+			// Ensure parent directory exists before creating symlink
+			os.MkdirAll(filepath.Dir(childDst), 0755)
+
+			_ = os.RemoveAll(childDst)
 			if err := os.Symlink(targetStr, childDst); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: symlink %s -> %s: %v\n", childDst, targetStr, err)
 			} else {
-				fmt.Printf("Symlink: %s -> %s\n", childSrc, targetStr)
+				fmt.Printf("Symlink: %s -> %s\n", childDst, targetStr)
 			}
 		default:
 			data, err := r.readFile(e.Ino, -1)
@@ -87,7 +158,7 @@ func (r *F2FSReader) extractDir(nid uint32, srcPath, dest string) error {
 			if err := os.WriteFile(childDst, data, 0644); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: write %s: %v\n", childDst, err)
 			} else {
-				fmt.Printf("Extracted: %s (%d bytes)\n", childSrc, len(data))
+				fmt.Printf("Extracted: %s (%d bytes)\n", childDst, len(data))
 			}
 		}
 	}
