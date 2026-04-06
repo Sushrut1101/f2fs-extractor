@@ -12,37 +12,52 @@ import (
 	"os"
 )
 
-const globalUsage = `F2FS Raw Image Extractor - browse and extract Android F2FS images
+// Version is injected by the Makefile during compilation.
+// If compiled directly with 'go build', it defaults to "dev".
+var Version = "dev"
+
+func printUsage() {
+	fmt.Printf(`F2FS Raw Image Extractor - browse and extract Android F2FS images
+Version: %s
 
 Usage:
 	f2fs-extractor <command> <image.img> [options] [args...]
 
 Commands:
-	help        Display this message
+	help        Show this help message
 	info        Show filesystem information
 	list        List directory contents
 	extract     Extract a file or directory (defaults to root '/')
 
+Options:
+	-v, --version  Show version information
+	-h, --help     Show this help message
+
 Run 'f2fs-extractor <command> -h' for help on a specific command.
-`
+`, Version)
+}
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Print(globalUsage)
+		printUsage()
 		os.Exit(1)
 	}
 
 	command := os.Args[1]
 
-	// Catch global help requests
+	// Catch options
 	if command == "-h" || command == "--help" || command == "help" {
-		fmt.Print(globalUsage)
+		printUsage()
+		os.Exit(0)
+	}
+	if command == "-v" || command == "--version" {
+		fmt.Printf("f2fs-extractor version %s\n", Version)
 		os.Exit(0)
 	}
 
 	if len(os.Args) < 3 {
 		fmt.Fprintln(os.Stderr, "Error: Missing image path.")
-		fmt.Print(globalUsage)
+		printUsage()
 		os.Exit(1)
 	}
 
@@ -69,7 +84,7 @@ func main() {
 		cmdArgs = extractCmd.Args()
 	default:
 		fmt.Printf("Unknown command: %s\n\n", command)
-		fmt.Print(globalUsage)
+		printUsage()
 		os.Exit(1)
 	}
 

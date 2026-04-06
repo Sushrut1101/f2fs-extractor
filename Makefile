@@ -1,6 +1,10 @@
 BIN_NAME := f2fs-extractor
 OUT_DIR := out
 
+# Version
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v1.0.0")
+LDFLAGS := -s -w -X main.Version=$(VERSION)
+
 # Terminal Colors
 GREEN := \033[0;32m
 CYAN  := \033[0;36m
@@ -57,4 +61,4 @@ __verify:
 
 __final_all:
 	@echo -e ""
-	@echo -e "$(GREEN) ✓ All builds completed successfully for $(BIN_NAME)!$(NC)"
+	@echo -e "$(GREEN) ✓ All builds completed successfully for $(BIN_NAME) $(VERSION)!$(NC)"
