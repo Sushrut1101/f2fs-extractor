@@ -2,7 +2,7 @@ BIN_NAME := f2fs-extractor
 OUT_DIR := out
 
 # Version
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v1.0.0")
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "v1.1.0")
 LDFLAGS := -s -w -X main.Version=$(VERSION)
 
 # Terminal Colors
