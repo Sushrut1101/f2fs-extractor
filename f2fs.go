@@ -357,10 +357,15 @@ func (r *F2FSReader) readDentryBlock(data []byte) []DirEntry {
 }
 
 func (r *F2FSReader) readInlineDentry(in *Inode) []DirEntry {
-	if in.numAddrs*4 <= 0 {
+	// Account for the 4-byte reserved i_addr[0] slot
+	available := in.numAddrs*4 - 4
+	if available <= 0 {
 		return nil
 	}
-	inline := in.raw[in.addrStart : in.addrStart+in.numAddrs*4]
+
+	inlineStart := in.addrStart + 4
+	inline := in.raw[inlineStart : inlineStart+available]
+
 	nr := 0
 	for testNR := 1; testNR < 1000; testNR++ {
 		if (testNR+7)/8+4+testNR*DirEntrySize+testNR*F2FSSlotLen > len(inline) {
@@ -475,14 +480,24 @@ func (r *F2FSReader) readFile(nid uint32, maxSize int64) ([]byte, error) {
 	if maxSize >= 0 && fileSize > maxSize {
 		fileSize = maxSize
 	}
+
+	// Handle Inline Data
 	if in.IInline&F2FSInlineData != 0 {
-		if available := int64(in.numAddrs * 4); fileSize > available {
+		// F2FS Quirk: Inline data starts 4 bytes AFTER the address array start.
+		// i_addr[0] is reserved by the filesystem.
+		inlineStart := in.addrStart + 4
+		available := int64(in.numAddrs*4 - 4)
+
+		if fileSize > available {
 			fileSize = available
 		}
+
 		out := make([]byte, fileSize)
-		copy(out, in.raw[in.addrStart:in.addrStart+int(fileSize)])
+		copy(out, in.raw[inlineStart:inlineStart+int(fileSize)])
 		return out, nil
 	}
+
+	// Handle Standard Block-based Data
 	result := make([]byte, 0, fileSize)
 	remaining := fileSize
 	for _, blkAddr := range r.getDataBlocks(in) {

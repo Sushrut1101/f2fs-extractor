@@ -7,6 +7,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,16 +31,10 @@ func (r *F2FSReader) cmdExtract(srcPath, dest string) error {
 
 // Clean F2FS binary padding to prevent Linux syscall crashes
 func parseSymlinkTarget(data []byte) string {
-	// Aggressively trim null bytes and whitespace from BOTH ends of the string
-	target := strings.Trim(string(data), "\x00\n\r\t ")
-
-	// If there is still a rogue null byte in the middle of the string, it will
-	// crash the Linux kernel syscall with 'invalid argument' (EINVAL). Cut it off.
-	if idx := strings.IndexByte(target, 0); idx >= 0 {
-		target = target[:idx]
+	if idx := bytes.IndexByte(data, 0); idx >= 0 {
+		data = data[:idx]
 	}
-
-	return target
+	return strings.TrimSpace(string(data))
 }
 
 func (r *F2FSReader) extractSymlink(nid uint32, srcPath, dest string) error {
