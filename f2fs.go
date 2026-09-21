@@ -90,6 +90,10 @@ type F2FSReader struct {
 	sb                                          Superblock
 	natBitmap                                   []byte
 	blockSize, blocksPerSeg, natEntriesPerBlock int
+	// nid -> block address overrides from the checkpoint's NAT journal,
+	// more recent than (and authoritative over) the raw NAT table below.
+	// nil when unavailable (non-compact summary format); see journal.go.
+	natJournal map[uint32]uint32
 }
 
 func NewF2FSReader(imagePath string) (*F2FSReader, error) {
@@ -102,6 +106,7 @@ func NewF2FSReader(imagePath string) (*F2FSReader, error) {
 		f.Close()
 		return nil, err
 	}
+	r.natJournal = r.loadNATJournal()
 	return r, nil
 }
 
@@ -226,6 +231,18 @@ func (r *F2FSReader) getNATEntry(nid uint32) (ino, blkAddr uint32, err error) {
 }
 
 func (r *F2FSReader) readNode(nid uint32) ([]byte, error) {
+	// The checkpoint's NAT journal, when present, overrides the raw table:
+	// it holds whatever changed most recently and has not been flushed back
+	// to the table yet, which is exactly the case the raw-table-only lookup
+	// below gets wrong.
+	if journalAddr, ok := r.natJournal[nid]; ok {
+		if data, err := r.readBlock(journalAddr); err == nil && le32(data, 4072) == nid {
+			return data, nil
+		}
+		// Journal entry present but its target didn't check out either;
+		// fall through to the raw-table path rather than giving up here.
+	}
+
 	_, blkAddr, err := r.getNATEntry(nid)
 	if err != nil {
 		return nil, fmt.Errorf("NAT lookup nid=%d: %w", nid, err)
@@ -256,7 +273,16 @@ func (r *F2FSReader) readNode(nid uint32) ([]byte, error) {
 			}
 		}
 	}
-	return data, nil
+	// Every candidate NAT copy (primary, and both raw set0/set1 alternates)
+	// pointed at a block whose footer does not actually belong to this nid.
+	// The on-disk raw NAT table can be stale relative to the checkpoint's NAT
+	// journal (entries not yet flushed back to their table slot), which this
+	// reader does not parse, so the true block address is unavailable here.
+	// Returning the wrong block's bytes as if they were nid's data silently
+	// produced a corrupt (typically zero-length) file with no diagnostic; an
+	// explicit error lets every caller here already fall back to a clean skip
+	// with a warning instead (see extractDir, listDir).
+	return nil, fmt.Errorf("nid=%d: no NAT copy resolved to a block whose footer matches (checkpoint NAT journal not parsed by this reader)", nid)
 }
 
 func (r *F2FSReader) parseInode(data []byte) *Inode {
